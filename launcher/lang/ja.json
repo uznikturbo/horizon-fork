@@ -208,7 +208,6 @@
   "Download and prepare": "ダウンロードして準備",
   "Not prepared. Play downloads Minecraft {version} from Mojang for your account and prepares it.": "未準備です。「プレイ」を押すと、あなたのアカウント用にMojangからMinecraft {version}をダウンロードして準備します。",
   "Not prepared. Horizon can download Minecraft {version} from Mojang for your account, or use your own install.": "未準備です。Horizonはあなたのアカウント用にMojangからMinecraft {version}をダウンロードするか、自分のインストールを使用できます。",
-  "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.": "未準備です。まずMinecraft {version}を所有するMicrosoftアカウントでサインインしてください。",
   "Cancel": "キャンセル",
   "Worlds": "ワールド",
   "Packs": "パック",
