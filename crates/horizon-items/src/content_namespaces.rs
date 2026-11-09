@@ -9,10 +9,19 @@ pub const MARKER: &str = "horizon-mod-content.json";
 /// The content mods' namespaces in a root built by `mod_content::build`; none in any
 /// other root, so vanilla's loaders read exactly what they did.
 pub fn namespaces(root: &Path) -> Vec<String> {
-    fs::read(root.join(MARKER))
+    let mut out: Vec<String> = fs::read(root.join(MARKER))
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+
+    let dynamic = super::dynamic_loader::DynamicModRegistry::scan_mods_dir("mods");
+    for ns in dynamic.loaded_namespaces {
+        if !out.contains(&ns) {
+            out.push(ns);
+        }
+    }
+
+    out
 }
 
 /// The namespaces whose tags loaders read in `root`: `minecraft`, and in a

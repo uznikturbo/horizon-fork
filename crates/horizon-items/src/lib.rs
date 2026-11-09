@@ -19,3 +19,7 @@ pub mod random_sequences;
 pub mod recipe_filters;
 pub mod use_animation;
 pub use horizon_client_core::Result;
+pub mod dynamic_loader;
+pub use dynamic_loader::{DynamicModRegistry, ModManifest};
+pub mod wasm_loader;
+pub use wasm_loader::WasmModEngine;
