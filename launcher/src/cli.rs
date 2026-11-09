@@ -735,15 +735,14 @@ enum Cmd {
         /// ATLauncher or GDLauncher (default: the launcher's, then every launcher's default)
         #[arg(long, conflicts_with = "download")]
         minecraft: Option<PathBuf>,
-        /// Download Minecraft from Mojang for the signed-in account that owns it, instead of
-        /// using an install
+        /// Download Minecraft from Mojang instead of using an install (no account needed)
         #[arg(long)]
         download: bool,
         /// The installed version (default: the selected one)
         #[arg(long)]
         version: Option<String>,
     },
-    /// Start the client (needs a signed-in Microsoft account that owns Minecraft: Java Edition)
+    /// Start the client (no account needed: without one it plays offline)
     Play {
         #[arg(long)]
         version: Option<String>,
