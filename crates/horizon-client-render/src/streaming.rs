@@ -16,6 +16,7 @@ use horizon_core::biome::BiomeZoom;
 use horizon_threads::jobs::{Class, PerWorker, Rank, Registration, Source};
 use horizon_world::block_render::FaceVisibility;
 use horizon_world::worldgen::decoration_order::DecorationOrder;
+use std::cell::RefCell;
 use std::{
     collections::{BinaryHeap, HashSet, VecDeque},
     sync::{Arc, Condvar, Mutex, MutexGuard, RwLock, TryLockError},
@@ -24,7 +25,24 @@ use std::{
 /// How long a worker waits with nothing to do before it gives back its
 /// generator's scratch buffers ([`ChunkGenerator::idle`]).
 pub const IDLE_RELEASE: std::time::Duration = std::time::Duration::from_secs(5);
+thread_local! {
+    static LOCAL_MESH_POOL: RefCell<Vec<SectionMesh>> = RefCell::new(Vec::with_capacity(32));
+}
 
+#[inline]
+pub fn recycle_mesh_local(mesh: SectionMesh) {
+    LOCAL_MESH_POOL.with(|pool| {
+        let mut pool = pool.borrow_mut();
+        if pool.len() < 32 {
+            pool.push(mesh);
+        }
+    });
+}
+
+#[inline]
+pub fn acquire_mesh_local() -> Option<SectionMesh> {
+    LOCAL_MESH_POOL.with(|pool| pool.borrow_mut().pop())
+}
 /// Worker CPU time and job counts by kind, for benchmarks
 /// (`examples/gen_light_bench.rs`). Off unless enabled: a relaxed load per
 /// job then.
@@ -360,6 +378,7 @@ struct MeshPool {
     meshes: Vec<SectionMesh>,
     bytes: usize,
 }
+#[allow(dead_code)]
 impl MeshPool {
     const BYTES: usize = 16 << 20;
     const COUNT: usize = 128;
@@ -1011,8 +1030,7 @@ impl<G: ChunkGenerator> Jobs<G> {
             }
             Job::Free(meshes) => {
                 for (_, mesh) in meshes {
-                    let rejected = shared.meshes.lock().unwrap().put(mesh);
-                    drop(rejected);
+                    recycle_mesh_local(mesh);
                 }
                 return None;
             }
@@ -1045,7 +1063,8 @@ impl<G: ChunkGenerator> Jobs<G> {
                     biomes: &context.biomes,
                     visibility,
                 };
-                let recycled = shared.meshes.lock().unwrap().take();
+                let recycled =
+                    acquire_mesh_local().unwrap_or_else(|| shared.meshes.lock().unwrap().take());
                 let mut mesh = mesher.mesh_reusing(&borrow(&region), sy, recycled, mesh_scratch);
                 mesh.sort_solid();
                 *faces = Some((context.tables.clone(), mesher.visibility));
