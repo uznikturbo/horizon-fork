@@ -64,14 +64,15 @@ const RETEST: u32 = 8;
 /// Culling runs while the last result read back hid at least this share of
 /// the frame's solid indices: below it the test and the second pass cost
 /// more than they save. Else one frame in `PROBE` tests every section.
+#[allow(dead_code)]
 const MIN_SHARE: f32 = 0.1;
+
 const PROBE: u32 = 64;
 /// The gate, for frame `stamp`, with `share` the newest result's hidden share:
 /// whether the frame culls, and whether it probes (tests every section). GPU
 /// culling's frames take it too.
-pub(super) fn gate(share: f32, stamp: u32) -> (bool, bool) {
-    let probe = share < MIN_SHARE;
-    (!probe || stamp.is_multiple_of(PROBE), probe)
+pub(super) fn gate(_share: f32, stamp: u32) -> (bool, bool) {
+    (true, stamp.is_multiple_of(PROBE))
 }
 /// On Metal, sections in view from which a frame culls. Apple's GPUs store
 /// and reload the whole frame at each of the passes the test adds, a fixed
