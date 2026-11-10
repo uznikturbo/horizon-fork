@@ -3,3 +3,6 @@
 # The private keys exist only as the RELEASE_SIGNING_KEY secret(s) of the repository's `release` environment.
 # Changing this file needs Ludovic's review (.github/CODEOWNERS).
 MU4oiIQcCxkZvbwSjjXs7SySCuM6ywRQ3nGaJYZG0gw=
+# This fork's own releases (uznikturbo/horizon-fork, .github/workflows/release.yml): the private key is the
+# fork's RELEASE_SIGNING_KEY repository secret.
+BCe+ZZCKhQqxN7GPuP3nMdMG/gvZ12vQB7WmEncMvN4=

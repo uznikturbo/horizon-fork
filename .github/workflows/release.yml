@@ -1,0 +1,251 @@
+name: release
+# Builds and publishes this fork's own game and launcher, which its launcher installs (launcher/src/backend.rs
+# REPO). Linux x86_64 only: what the fork's players run. It builds on GitHub-hosted runners, so the Java
+# exporters are compiled here from Mojang's public pinned files (tools/ci/fetch_minecraft.py) and only the
+# classes from mods/horizon/src/test/java leave the job (docs/fork-releases.md).
+#
+# A push builds nothing unless its commit message says [release]; the Actions tab's "Run workflow" always
+# builds. Two releases come out of one run:
+#   v<date>              the game, the release every launcher installs and updates to
+#   launcher@0.2.<run>   the launcher, which updates itself from it (never marked latest)
+# Both carry SHA256SUMS and its signature, made by tools/ci/sign_release.sh with the RELEASE_SIGNING_KEY
+# repository secret; the public key is in crates/horizon-release-sign/release-keys.txt.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  decide:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]') }}
+    outputs:
+      game_tag: ${{ steps.tags.outputs.game_tag }}
+      version: ${{ steps.tags.outputs.version }}
+      launcher_tag: ${{ steps.tags.outputs.launcher_tag }}
+      launcher_version: ${{ steps.tags.outputs.launcher_version }}
+    steps:
+      - id: tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          date=$(date -u +%Y.%m.%d)
+          version=$date
+          game_tag="v$date"
+          # A second release the same day is `v<date>.<run number>`, which compares above the date's first one.
+          if gh release view "$game_tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            version="$date.${{ github.run_number }}"
+            game_tag="v$version"
+          fi
+          echo "game_tag=$game_tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # The launcher's own tag is the release's: an installed launcher asks for anything above it, so every
+          # run's number moves it forward without a version bump commit.
+          echo "launcher_version=0.2.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          echo "launcher_tag=launcher@0.2.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+  game:
+    needs: decide
+    runs-on: ubuntu-latest
+    # A release build of the whole game, then the exporters: hours on a hosted runner.
+    timeout-minutes: 330
+    env:
+      HORIZON_VERSION: ${{ needs.decide.outputs.version }}
+      BIN: target/fast
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Room for the build
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: fork-release-game
+      - name: ALSA and udev headers
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Build the client, horizon-ctl, horizon-prepare and horizon-server
+        run: |
+          cargo build --profile fast --locked -p horizon-client -p horizon-client-lib \
+            --bin horizon-client --bin horizon-ctl \
+            -p horizon-prepare --bin horizon-prepare \
+            -p horizon-server --bin horizon-server
+      - name: The pinned Minecraft files, from Mojang
+        run: python3 tools/ci/fetch_minecraft.py --out "$RUNNER_TEMP/minecraft"
+      - name: Import them, as a player's first launch does
+        # The only thing this needs is the import (`.local/minecraft/<version>`); its resources go to a scratch
+        # folder. `compile-exporters` then builds the exporters from that import in seconds.
+        run: |
+          set -euo pipefail
+          mc="$RUNNER_TEMP/minecraft"
+          "$BIN/horizon-prepare" --root "$PWD" --prepare \
+            --version-json "$mc/version.json" --client-jar "$mc/client.jar" \
+            --server-jar "$mc/server.jar" --libraries-dir "$mc/libraries" \
+            --output "$RUNNER_TEMP/resources"
+      - name: The Java exporters, compiled from those files
+        # What a release folder ships, so players' machines prepare resources with a plain runtime, no JDK:
+        # only our own classes and their manifest are kept.
+        run: |
+          set -euo pipefail
+          bundle=$("$BIN/horizon-prepare" compile-exporters --root "$PWD" | tail -1)
+          mkdir -p exporters
+          cp -R "$bundle/server" "$bundle/client" "$bundle/manifest.json" exporters/
+          stray=$(find exporters -type f ! -path exporters/manifest.json \
+            ! \( -name '*.class' \( -path 'exporters/server/dev/horizonlab/parity/*' -o -path 'exporters/client/dev/horizonlab/parity/*' \))
+          [ -z "$stray" ] || { echo "::error::not one of our classes: $stray"; exit 1; }
+          python3 tools/check_prepare_exporters.py --binary "$BIN/horizon-prepare"
+      - name: Package
+        run: |
+          set -euo pipefail
+          cargo run --locked --profile fast -p xtask -- package "$BIN/horizon-client" dist/horizon-linux-x86_64
+          (cd dist && tar czf horizon-linux-x86_64.tar.gz horizon-linux-x86_64)
+          ls -l dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: game
+          path: dist/horizon-linux-x86_64.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+  launcher:
+    needs: decide
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      HORIZON_LAUNCHER_VERSION: ${{ needs.decide.outputs.launcher_version }}
+      HORIZON_LAUNCHER_TAG: ${{ needs.decide.outputs.launcher_tag }}
+    defaults:
+      run:
+        working-directory: launcher
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: launcher
+          shared-key: fork-release-launcher
+      - name: Linux libraries GPUI links to
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-x11-dev libwayland-dev libx11-xcb-dev libfontconfig-dev \
+            libvulkan-dev libasound2-dev patchelf
+      - run: cargo build --release --locked
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp target/release/horizon-launcher out/
+          (cd out && tar czf horizon-launcher-linux-x86_64.tar.gz horizon-launcher)
+          ls -l out
+      - uses: actions/upload-artifact@v7
+        with:
+          name: launcher
+          path: launcher/out/horizon-launcher-linux-x86_64.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+  sign:
+    needs: [decide, game, launcher]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The only job that holds the private key. It runs nothing from the repository but tools/ci/sign_release.sh,
+    # which calls only the runner's sha256sum and OpenSSL.
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: tools/ci/sign_release.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: game
+          path: dist/game
+      - uses: actions/download-artifact@v8
+        with:
+          name: launcher
+          path: dist/launcher
+      - name: Sign each release's checksums
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "$RELEASE_SIGNING_KEY" ] || { echo "::error::no RELEASE_SIGNING_KEY secret: the launcher would refuse these builds"; exit 1; }
+          bash tools/ci/sign_release.sh "${{ needs.decide.outputs.game_tag }}" dist/game/horizon-linux-x86_64.tar.gz
+          bash tools/ci/sign_release.sh "${{ needs.decide.outputs.launcher_tag }}" dist/launcher/horizon-launcher-linux-x86_64.tar.gz
+      - uses: actions/upload-artifact@v7
+        with:
+          name: signed
+          path: dist/*/SHA256SUMS*
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    needs: [decide, sign]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: game
+          path: dist/game
+      - uses: actions/download-artifact@v8
+        with:
+          name: launcher
+          path: dist/launcher
+      - uses: actions/download-artifact@v8
+        with:
+          name: signed
+          path: dist
+      - name: The signatures, checked as the launcher checks them
+        run: |
+          set -euo pipefail
+          cargo run --locked --quiet -p horizon-release-sign -- verify --tag "${{ needs.decide.outputs.game_tag }}" --publishing dist/game
+          cargo run --locked --quiet -p horizon-release-sign -- verify --tag "${{ needs.decide.outputs.launcher_tag }}" --publishing dist/launcher
+      - name: Publish the game
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ needs.decide.outputs.game_tag }}"
+          cat > notes.md <<EOF
+          This fork's game build from \`${{ github.sha }}\`: \`$tag\`, for Linux x86_64.
+          EOF
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "${{ github.sha }}" \
+            --title "Horizon ${{ needs.decide.outputs.version }}" --notes-file notes.md \
+            "dist/game/horizon-linux-x86_64.tar.gz" "dist/game/SHA256SUMS" "dist/game/SHA256SUMS.sig"
+      - name: Publish the launcher
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ needs.decide.outputs.launcher_tag }}"
+          cat > notes.md <<EOF
+          This fork's launcher build from \`${{ github.sha }}\`: \`$tag\`, for Linux x86_64.
+          EOF
+          # Never latest: the game's release stays the repository's latest.
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "${{ github.sha }}" --latest=false \
+            --title "Horizon Launcher ${{ needs.decide.outputs.launcher_version }}" --notes-file notes.md \
+            "dist/launcher/horizon-launcher-linux-x86_64.tar.gz" "dist/launcher/SHA256SUMS" "dist/launcher/SHA256SUMS.sig"
