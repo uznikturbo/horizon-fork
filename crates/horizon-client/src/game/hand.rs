@@ -340,6 +340,10 @@ impl Game<'_> {
             // keys: a creative break does not move the use that follows it
             // past the broken block.
             self.pick_tick_targets();
+            // A wasm mod sees the click before the game acts on it.
+            if attack_clicks > 0 || use_clicks > 0 {
+                self.wasm_block_click();
+            }
             let mut world = GameHands {
                 game: self,
                 error: None,

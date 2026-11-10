@@ -273,6 +273,8 @@ impl Game<'_> {
         }
         self.draw_pvp_hud(batch, &mut corners);
         self.native_hud(batch, &mut corners);
+        // A wasm mod's HUD, after the extras it may sit beside.
+        self.draw_wasm_hud(batch);
     }
     /// The height the status effect icons take at the top right
     /// (`Hud.extractEffects`: beneficial at y 1, harmful at y 26).

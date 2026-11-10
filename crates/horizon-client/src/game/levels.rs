@@ -28,6 +28,7 @@ use horizon_client::{
     vanillagen::VanillaTerrain,
     world::World,
 };
+use horizon_items::wasm_loader::WorldAction;
 use horizon_world::level::{LevelEvent, Ticks};
 use std::{
     collections::HashMap,
@@ -607,6 +608,9 @@ impl Game<'_> {
         {
             let _span = horizon_client::spans::guard("mods_server_tick_start");
             self.native_lifecycle_server_tick_start(running);
+
+            let _wasm_span = horizon_client::spans::guard("wasm_mods_tick");
+            self.mods.wasm.tick(self.world.game_time.max(0) as u64);
         }
         let observe_level =
             running.is_some() && (self.serving.is_some() || self.options.dedicated.is_some());
@@ -637,6 +641,25 @@ impl Game<'_> {
             }
             self.update_dedicated_streaming();
             self.update_world();
+
+            let _wasm_apply_span = horizon_client::spans::guard("wasm_apply_actions");
+            // The block changes mods asked for while ticking, on the level that
+            // tick brought in (a mod's action names no dimension, as a mixin's
+            // `setBlock` runs in the level it is called on).
+            while let Some(action) = self.mods.wasm.take_action() {
+                match action {
+                    WorldAction::SetBlock { pos, block } => {
+                        let Some(state) = self.pack.assets.registry.default_state(&block) else {
+                            log::warn!("wasm mods: no block '{block}'");
+                            continue;
+                        };
+                        if let Err(e) = self.place_state([pos.x, pos.y, pos.z], state, false, false)
+                        {
+                            log::warn!("wasm mods: cannot set '{block}' at {pos:?}: {e:?}");
+                        }
+                    }
+                }
+            }
             result = horizon_client::block_contact::in_level(
                 (self.serving.is_some() || self.options.dedicated.is_some()).then_some(dim.id()),
                 || {

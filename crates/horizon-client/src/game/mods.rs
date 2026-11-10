@@ -1,6 +1,6 @@
 //! Mods in the game (`docs/mods.md`): content mods' blocks, items, data and
-//! assets (`content_root`), and the Mods page's rows. Code mods are native
-//! (`native_hooks.rs`); WebAssembly code mods don't run any more.
+//! assets (`content_root`), the Mods page's rows, and `code.wasm` mods
+//! (`wasm`). Code mods are native (`native_hooks.rs`) or WebAssembly.
 use super::Game;
 use horizon_client::{
     lang,
@@ -8,6 +8,8 @@ use horizon_client::{
     text::Text,
 };
 use std::path::PathBuf;
+
+pub(in crate::game) mod wasm;
 
 #[derive(Default)]
 pub(super) struct ModsState {
@@ -31,6 +33,19 @@ pub(super) struct ModsState {
     /// `res` was loaded from: the world tables are built from it even with no
     /// data pack (`build_world_tables`).
     pub(super) data_switched: bool,
+    /// `code.wasm` mods: the Wasmtime host and the modules it loaded.
+    pub(in crate::game) wasm: wasm::WasmMods,
+}
+
+impl ModsState {
+    /// The mod state a game starts with; `wasm_on` loads `mods/*/code.wasm`
+    /// (false under `--benchmark`).
+    pub(super) fn new(wasm_on: bool) -> Self {
+        Self {
+            wasm: wasm::WasmMods::load(wasm_on),
+            ..Self::default()
+        }
+    }
 }
 
 /// Freeze native component IDs before reading content or opening a connection.
