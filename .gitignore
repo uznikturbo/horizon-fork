@@ -15,6 +15,11 @@
 /logs/
 /dist/
 /mods/horizon/build/
+# Local `mods/` of a game folder: wasm and content test mods, plus the wasm
+# host's fixture. The Java parity oracle in `mods/horizon/` is tracked, so it
+# stays visible; everything else under `mods/` is local.
+/mods/*
+!/mods/horizon/
 /saves/
 /backups/
 /tools/logs/
