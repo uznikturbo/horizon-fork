@@ -5,12 +5,18 @@ Two kinds of mod run in Horizon:
 | Kind | File | What it is | Where it runs |
 |---|---|---|---|
 | **Content mod** | `.hmod` | Data and assets: blocks, items, recipes, loot, tags, models, textures, structures. No code. | Read when the game starts |
+| **Wasm mod** | `mods/<name>/code.wasm` | A WebAssembly module run by the game's Wasmtime host: a small HUD, block clicks and block changes. | In the game process, in the host's sandbox ([wasm-mods.md](wasm-mods.md)) |
 | **Native mod** | `.hnmod` | A [horizon-mixins](https://github.com/horizon-rust/horizon-mixins) bundle: Rust that changes the game's own source before it is compiled. | In a game the launcher builds for the player ([native-mods.md](native-mods.md)) |
 
 Fabric and NeoForge jars do **not** run as they are: their code calls and patches Minecraft's Java classes, and
 Horizon has none. What carries over is the data and assets inside a jar ([modpacks.md](modpacks.md)).
 
-Mods are **off by default**. A fresh install has no `horizon-mods` folder and plays exactly like vanilla 26.3.
+A **wasm mod** is neither of the launcher's kinds: it is a module in `mods/` in the game folder, run by the game's
+Wasmtime host without a build. It may draw a small HUD, observe block clicks and queue block changes
+([wasm-mods.md](wasm-mods.md)); it is experimental and has no Mods-page switch yet.
+
+Content and native mods are **off by default**. A fresh install has no `horizon-mods` folder and plays exactly like
+vanilla 26.3.
 
 ## Playing with mods
 

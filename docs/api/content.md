@@ -46,6 +46,8 @@ starts and writes them when the player changes a setting.
   entity types or world generation loads only at start ([mods.md](../mods.md)).
 - **Native mods** need Horizon rebuilt with them (horizon-mixins, [native-mods.md](../native-mods.md)). A launcher
   that doesn't build Horizon doesn't offer them.
+- **Wasm mods** are not installed by a launcher yet: a `mods/<id>/code.wasm` in the game folder loads at start,
+  outside `horizon-mods.txt` and without a switch ([wasm-mods.md](../wasm-mods.md)).
 - **A modpack** isn't copied into the game folder. A launcher reads its `horizon-modpack.toml`, installs each mod
   it lists from the index with the checks below, writes `mod.<id>:true` for those with `on` (the default), and
   copies `overrides/` into the game folder. `overrides/` may hold only what [mod-index.md](mod-index.md#hpack)
