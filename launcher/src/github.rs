@@ -20,6 +20,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const API: &str = "https://api.github.com";
+/// Kira's read-only mirror serves upstream Horizon's release reads only, whatever repository this
+/// build reads its own builds from.
+const MIRRORED_REPO: &str = "horizon-rust/horizon";
 /// Kira's read-only mirror of Horizon's release reads. `HORIZON_GITHUB_MIRROR` replaces it (an
 /// empty value turns it off).
 pub const MIRROR: &str = "https://mcp.playhorizon.dev/github/public";
@@ -120,7 +123,7 @@ pub(crate) fn mirror_url(url: &str) -> Option<String> {
 
 fn mirror_url_with(url: &str, base: &str) -> Option<String> {
     let path = url.strip_prefix(API)?;
-    let repo = format!("/repos/{}/", backend::REPO);
+    let repo = format!("/repos/{MIRRORED_REPO}/");
     (!base.is_empty() && path.starts_with(&repo))
         .then(|| format!("{}{path}", base.trim_end_matches('/')))
 }
